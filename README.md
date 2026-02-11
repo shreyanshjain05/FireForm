@@ -1,0 +1,39 @@
+# 🔥 FireForm
+
+FireForm is the 1st Place Winner of the Reboot the Earth hackathon, hosted by the United Nations (UN) and UC Santa Cruz (UCSC).
+
+It is an open-source, agnostic system built to solve administrative overhead for first responders. FireForm is a Digital Public Good (DPG) designed to help departments like Cal Fire save hundreds of hours by eliminating redundant paperwork.
+
+## 🚩 The Problem
+
+First responders, like firefighters, are often required to report a single incident to multiple different agencies (e.g., county sheriff, local PD, emergency medical services). Each agency has its own unique forms and templates. This forces firefighters to spend hours at the end of their shift filling out the same information over and over, taking them away from critical duties.
+
+## 💡 The Solution
+
+FireForm is a centralized "report once, file everywhere" system.
+- **Single Input:** A firefighter records a single voice memo or fills out one "master" text field describing the entire incident.
+- **AI Extraction:** The transcription is sent to an open-source LLM (via Ollama) which extracts all the key information (names, locations, incident details) into a structured JSON file.
+- **Template Filling:** FireForm then takes this single JSON object and uses it to automatically fill every required PDF template for all the different agencies.
+
+The result is hours of time saved per shift, per firefighter.
+
+### ✨ Key Features
+- **Agnostic:** Works with any department's existing fillable PDF forms.
+- **AI-Powered:** Uses open-source, locally-run LLMs (Mistral) to extract data from natural language. No data ever needs to leave the local machine.
+- **Single Point of Entry:** Eliminates redundant data entry entirely.
+
+Open-Source (DPG): Built 100% with open-source tools to be a true Digital Public Good, freely available for any department to adopt and modify.
+
+## ⚖️ License
+
+This project is licensed under the MIT License. See the LICENSE file for details.
+
+## 🏆 Acknowledgements and Contributors
+This project was built in 48 hours for the Reboot the Earth 2025 hackathon. Thank you to the United Nations and UC Santa Cruz for hosting this incredible event and inspiring us to build solutions for a better future.
+
+__Contributors:__ 
+- Juan Álvarez Sánchez (@juanalvv)
+- Manuel Carriedo Garrido
+- Vincent Harkins (@vharkins1)
+- Marc Vergés (@marcvergees) 
+- Jan Sans
