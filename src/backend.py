@@ -51,7 +51,8 @@ class textToJSON():
             prompt = self.build_prompt(field)
             # print(prompt)
             # ollama_url = "http://localhost:11434/api/generate"
-            ollama_url = os.getenv("OLLAMA_HOST", "htto://localhost:1134") + "/api/generate"
+            ollama_host = os.getenv("OLLAMA_HOST", "http://localhost:11434").rstrip("/")
+            ollama_url = f"{ollama_host}/api/generate"
 
             payload = {
                 "model": "mistral",
@@ -171,4 +172,3 @@ class Fill():
         
         # Your main.py expects this function to return the path
         return output_pdf
-
