@@ -28,7 +28,12 @@ Open-Source (DPG): Built 100% with open-source tools to be a true Digital Public
 
 We are committed to providing a friendly, safe, and welcoming environment for all. Please see our [Code of Conduct](CODE_OF_CONDUCT.md) for more information.
 
+## 🚀 Contributing
+
+Contributions are welcome! Please see our [Contributing Guide](CONTRIBUTING.md) to learn how you can help.
+
 ## ⚖️ License
+
 
 
 This project is licensed under the MIT License. See the LICENSE file for details.
