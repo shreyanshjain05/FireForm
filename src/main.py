@@ -78,7 +78,7 @@ def extract_pdf_text(pdf_path: str) -> str:
 
 if __name__ == "__main__":
     BASE_DIR = Path(__file__).resolve().parent
-    pdf_file = BASE_DIR / "inputs" / "file.pdf"
+    pdf_file = BASE_DIR / "inputs" / "sample1.pdf"
 
     # Step 1: Extract text from PDF
     print("[INFO] Extracting text from PDF...")
@@ -108,9 +108,11 @@ if __name__ == "__main__":
 
     # Step 5: Fill PDF
     from pdfrw import PdfReader as PdfrwReader, PdfWriter
+    from backend import Fill
 
     output_pdf = str(pdf_file)[:-4] + "_filled.pdf"
     pdf = PdfrwReader(str(pdf_file))
+    any_fields_filled = False
 
     for page in pdf.pages:
         if page.Annots:
@@ -120,8 +122,13 @@ if __name__ == "__main__":
                     if field_name in field_values and field_values[field_name] is not None:
                         annot.V = f'({field_values[field_name]})'
                         annot.AP = None
+                        any_fields_filled = True
 
-    PdfWriter().write(output_pdf, pdf)
+    if not any_fields_filled:
+        print("\n[WARN] No interactive widgets found. Attempting visual text overlay for flat PDF...")
+        output_pdf = Fill.fill_flat_form(field_values, str(pdf_file))
+    else:
+        PdfWriter().write(output_pdf, pdf)
     print("\n----------------------------------")
     print(f"Process Complete.")
     print(f"Output saved to: {output_pdf}")

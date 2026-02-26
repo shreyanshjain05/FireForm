@@ -1,7 +1,11 @@
 import json
 import os
 import requests
-from pdfrw import PdfReader, PdfWriter
+import io
+from pdfrw import PdfReader, PdfWriter, PageMerge
+from reportlab.pdfgen import canvas
+from reportlab.lib.pagesizes import letter
+import pdfplumber
 
 
 class FormAnalyzer():
@@ -43,9 +47,16 @@ JSON output:"""
 Identify ALL fillable fields in this form (blanks, underlines, or areas where a user would write/type information).
 
 RULES:
-- Return ONLY a valid JSON array of objects, each with "name" (a short technical name) and "description" (what should be filled in).
-- Do NOT include any explanation or extra text, just the JSON array.
-- Be thorough — identify every field where data needs to be entered.
+- You MUST return a JSON ARRAY containing MULTIPLE objects. Do not return just one object.
+- If you find 10 fields, return an array of 10 objects.
+- Each object must have "name" (a short technical name) and "description" (what should be filled in).
+- Return ONLY the raw JSON array. No markdown, no explanations.
+
+EXAMPLE OUTPUT FORMAT:
+[
+  {{"name": "first_name", "description": "Legal first name"}},
+  {{"name": "incident_date", "description": "Date of the incident"}}
+]
 
 FORM TEXT:
 {pdf_text}
@@ -59,28 +70,53 @@ JSON output:"""
             "model": os.getenv("OLLAMA_MODEL", "llama3:latest"),
             "prompt": prompt,
             "stream": False,
-            "format": "json"
+            "format": {
+                "type": "array",
+                "items": {
+                    "type": "object",
+                    "properties": {
+                        "name": {
+                            "type": "string"
+                        },
+                        "description": {
+                            "type": "string"
+                        }
+                    },
+                    "required": ["name", "description"]
+                }
+            }
         }
 
         print("\t[LOG] Asking LLM to analyze form fields...")
-        response = requests.post(ollama_url, json=payload)
-        json_data = response.json()
-        raw_response = json_data['response'].strip()
-
         try:
+            response = requests.post(ollama_url, json=payload, timeout=300)
+            response.raise_for_status()
+            json_data = response.json()
+            raw_response = json_data['response'].strip()
+            
+            print(f"\t[LOG] Raw LLM reply: '{raw_response}'")
             fields = json.loads(raw_response)
+            
             # Handle case where LLM wraps array in an object
             if isinstance(fields, dict):
-                # Try to find the array inside
-                for key, val in fields.items():
-                    if isinstance(val, list):
-                        fields = val
-                        break
+                # If it's a single field dictionary, wrap it in a list
+                if "name" in fields and "description" in fields:
+                    fields = [fields]
+                else:
+                    # Try to find the array inside
+                    for key, val in fields.items():
+                        if isinstance(val, list):
+                            fields = val
+                            break
             if isinstance(fields, list):
                 print(f"\t[LOG] LLM identified {len(fields)} fields.")
                 return fields
+        except requests.exceptions.RequestException as e:
+            print(f"\t[WARN] LLM connection or timeout error: {e}")
         except json.JSONDecodeError:
-            pass
+            print("\t[WARN] LLM returned invalid JSON.")
+        except Exception as e:
+             print(f"\t[WARN] Error parsing LLM response: {e}")
 
         print("\t[WARN] LLM field analysis failed. Using fallback.")
         if existing_field_names:
@@ -153,7 +189,7 @@ JSON output:"""
         }
 
         print("\t[LOG] Sending single LLM request for all fields...")
-        response = requests.post(ollama_url, json=payload)
+        response = requests.post(ollama_url, json=payload, timeout=120)
 
         json_data = response.json()
         raw_response = json_data['response'].strip()
@@ -195,6 +231,8 @@ class Fill():
         # Read PDF
         pdf = PdfReader(pdf_form)
 
+        any_fields_filled = False
+        
         # Fill fields by matching annotation names
         for page in pdf.pages:
             if page.Annots:
@@ -207,8 +245,79 @@ class Fill():
                             if value is not None:
                                 annot.V = f'({value})'
                                 annot.AP = None
-                                print(f"\t[LOG] Filled '{field_name}' -> '{value}'")
+                                any_fields_filled = True
+                                print(f"\t[LOG] Filled interactive field '{field_name}' -> '{value}'")
+
+        if not any_fields_filled:
+            print("\n\t[WARN] No interactive widgets found. Attempting visual text overlay for flat PDF...")
+            output_pdf = Fill.fill_flat_form(extracted_data, pdf_form)
+            return output_pdf
 
         PdfWriter().write(output_pdf, pdf)
+        return output_pdf
 
+    @staticmethod
+    def fill_flat_form(extracted_data: dict, pdf_form: str):
+        """
+        Fallback for flat PDFs without interactive fields.
+        Finds the coordinates of the question text and stamps the answer next to it.
+        """
+        output_pdf = pdf_form[:-4] + "_filled.pdf"
+
+        # 1. Find coordinates for each field label using pdfplumber
+        field_coords = {}
+        with pdfplumber.open(pdf_form) as pdf:
+            for page_num, page in enumerate(pdf.pages):
+                words = page.extract_words()
+                
+                # Simple heuristic: look for the field description/name in the text
+                for field_name, value in extracted_data.items():
+                    if not value or field_name in field_coords:
+                        continue
+                        
+                    # Clean up technical field name to match printed text (e.g. "incident_number" -> "incident number")
+                    search_term = field_name.replace("_", " ").lower()
+                    
+                    for word in words:
+                        if search_term in word['text'].lower() or word['text'].lower() in search_term:
+                            # Found a potential match! 
+                            # We will stamp the text slightly to the right of this word.
+                            # pdfplumber origin is top-left, reportlab is bottom-left
+                            y_inverted = page.height - word['bottom']
+                            field_coords[field_name] = {
+                                "page": page_num,
+                                "x": word['x1'] + 5, # 5 points to the right of the label
+                                "y": y_inverted,
+                                "value": value
+                            }
+                            break
+
+        # 2. Draw the text using reportlab
+        original_pdf = PdfReader(pdf_form)
+        
+        for page_num, page in enumerate(original_pdf.pages):
+           # Create a transparent overlay canvas for this page
+           packet = io.BytesIO()
+           # Assume standard letter size for the canvas base
+           c = canvas.Canvas(packet, pagesize=letter)
+           
+           c.setFont("Helvetica", 10)
+           c.setFillColorRGB(0, 0, 1) # Blue ink so it stands out
+
+           # Draw fields belonging to this page
+           for field_name, data in field_coords.items():
+               if data["page"] == page_num:
+                    c.drawString(data["x"], data["y"], str(data["value"]))
+                    print(f"\t[LOG] Overlaying '{field_name}' -> '{data['value']}' at (X:{data['x']:.1f}, Y:{data['y']:.1f})")
+
+           c.save()
+           packet.seek(0)
+           
+           # Merge the drawn canvas onto the original page
+           overlay_pdf = PdfReader(packet)
+           if len(overlay_pdf.pages) > 0:
+               overlay_page = overlay_pdf.pages[0]
+               PageMerge(page).add(overlay_page).render()
+
+        PdfWriter().write(output_pdf, original_pdf)
         return output_pdf
